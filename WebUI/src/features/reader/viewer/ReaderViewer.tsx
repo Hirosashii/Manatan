@@ -83,6 +83,13 @@ const BaseReaderViewer = ({
 
     const zoomWrapperRef = useRef<HTMLDivElement | null>(null);
 
+    const touchStartX = useRef<number | null>(null);
+    const touchStartY = useRef<number | null>(null);
+    const swipeThreshold = 50;
+
+    const startedAtLeftEdge = useRef(false);
+    const startedAtRightEdge = useRef(false);
+
     const isMobile = useIsMobile();
 
     useEffect(() => {
@@ -341,6 +348,96 @@ const BaseReaderViewer = ({
         }
     };
 
+    const isAtLeftEdge = () => {
+    const el = scrollElementRef.current;
+    if (!el) return false;
+        return el.scrollLeft <= 0;
+    };
+
+    const isAtRightEdge = () => {
+        const el = scrollElementRef.current;
+        if (!el) return false;
+        return el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        const touch = e.touches[0];
+        touchStartX.current = touch.clientX;
+        touchStartY.current = touch.clientY;
+
+        startedAtLeftEdge.current = isAtLeftEdge();
+        startedAtRightEdge.current = isAtRightEdge();
+    };
+
+    const handleTouchMove = () => {
+    const el = scrollElementRef.current;
+        if (!el) return;
+
+        // If we moved away from the left edge at any point, invalidate the swipe-to-page functionality
+        if (startedAtLeftEdge.current && el.scrollLeft > 0) {
+            startedAtLeftEdge.current = false;
+        }
+
+        // If we moved away from the right edge, invalidate the swipe-to-page functionality
+        if (startedAtRightEdge.current &&
+            el.scrollLeft + el.clientWidth < el.scrollWidth - 1) {
+            startedAtRightEdge.current = false;
+        }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (touchStartX.current === null || touchStartY.current === null) return;
+
+        const touch = e.changedTouches[0];
+
+        const dx = touch.clientX - touchStartX.current;
+        const dy = touch.clientY - touchStartY.current;
+
+        touchStartX.current = null;
+        touchStartY.current = null;
+
+        // Ignore vertical swipes
+        if (Math.abs(dx) < Math.abs(dy)) return;
+
+        // Ignore continuous reading modes
+        if (isContinuousReadingModeActive) return;
+
+        // Ignore small swipes
+        if (Math.abs(dx) < swipeThreshold) return;
+
+        const isRTL = readingDirection === ReadingDirection.RTL;
+
+        if (!isRTL) {
+            // LTR reading
+            if (dx < 0) {
+                if (startedAtRightEdge.current) {
+                    console.log("LTR. Next Page.")
+                    ReaderControls.openPage('next');
+                }
+            } else {
+                if (startedAtLeftEdge.current) {
+                    console.log("LTR. Previous Page.")
+                    ReaderControls.openPage('previous');
+                }
+            }
+        } else {
+            // RTL reading
+            if (dx < 0) {
+                if (startedAtRightEdge.current) {
+                    console.log("RTL. Previous Page.")
+                    ReaderControls.openPage('next');
+                }
+            } else {
+                if (startedAtLeftEdge.current) {
+                    console.log("RTL. Next Page.")
+                    ReaderControls.openPage('previous');
+                }
+            }
+        }
+        startedAtLeftEdge.current = false;
+        startedAtRightEdge.current = false;
+    };
+
     return (
         <Stack
             ref={mergedRef}
@@ -367,6 +464,9 @@ const BaseReaderViewer = ({
             }}
             onClick={(e) => !isDragging && ReaderControls.handleClick(scrollElementRef.current, e)}
             onScroll={handleScroll}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
         >
             <ReaderZoomWrapper
                 ref={zoomWrapperRef}
@@ -409,7 +509,7 @@ const BaseReaderViewer = ({
                             key={chapter.id}
                             chapterId={chapter.id}
                             mangaId={chapter.mangaId}
-                            chapterSourceOrder={chapter.sourceOrder}
+                            chapterSourceOrder={chapter.sourceOrder}
                             previousChapterId={previousChapter?.id}
                             nextChapterId={nextChapter?.id}
                             isPreviousChapterVisible={previousNextChapterVisibility.previous}
